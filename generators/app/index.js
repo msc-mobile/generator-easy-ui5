@@ -1,4 +1,5 @@
 const Generator = require("yeoman-generator"),
+    fileaccess = require("../../helpers/fileaccess"),
     path = require("path"),
     glob = require("glob");
 
@@ -10,7 +11,7 @@ module.exports = class extends Generator {
             name: "projectname",
             message: "How do you want to name this project?",
             validate: (s) => {
-                if (/^[a-zA-Z0-9_-]*$/g.test(s)) {
+                if (/^\d*[a-zA-Z][a-zA-Z0-9]*$/g.test(s)) {
                     return true;
                 }
                 return "Please use alpha numeric characters only for the project name.";
@@ -26,16 +27,18 @@ module.exports = class extends Generator {
                 }
                 return "Please use alpha numeric characters and dots only for the namespace.";
             },
-            default: "msc"
+            default: "com.myorg"
         }, {
             type: "list",
             name: "platform",
             message: "On which platform would you like to host the application?",
             choices: ["Static webserver",
                 "Application Router @ Cloud Foundry",
-                "Application Router @ SAP HANA XS Advanced",
                 "Cloud Foundry HTML5 Application Repository",
-                "Fiori Launchpad on Cloud Foundry"],
+                "Fiori Launchpad on Cloud Foundry",
+                "Application Router @ SAP HANA XS Advanced",
+                "SAP NetWeaver"
+            ],
             default: "Static webserver"
         }, {
             type: "list",
@@ -48,7 +51,7 @@ module.exports = class extends Generator {
             name: "viewname",
             message: "How do you want to name your main view?",
             validate: (s) => {
-                if (/^[a-zA-Z0-9_\.]*$/g.test(s)) {
+                if (/^\d*[a-zA-Z][a-zA-Z0-9]*$/g.test(s)) {
                     return true;
                 }
                 return "Please use alpha numeric characters only for the view name.";
@@ -59,9 +62,7 @@ module.exports = class extends Generator {
             name: "ui5libs",
             message: "Where should your UI5 libs be served from?",
             choices: (props) => {
-                return (props.platform !== "Fiori Launchpad on Cloud Foundry") ?
-                    ["Content delivery network (OpenUI5)", "Content delivery network (SAPUI5)", "Local resources (OpenUI5)", "Local resources (SAPUI5)"] :
-                    ["Content delivery network (SAPUI5)"];
+                return (props.platform !== "Fiori Launchpad on Cloud Foundry") ? ["Content delivery network (OpenUI5)", "Content delivery network (SAPUI5)", "Local resources (OpenUI5)", "Local resources (SAPUI5)"] : ["Content delivery network (SAPUI5)"];
             },
             default: (props) => {
                 return (props.platform !== "Fiori Launchpad on Cloud Foundry") ?
@@ -77,23 +78,17 @@ module.exports = class extends Generator {
             type: "confirm",
             name: "cordova",
             message: "Is it a Cordova project?"
-        }, {
-            type: "confirm",
-            name: "scss",
-            message: "Will you use SCSS?"
         }]).then((answers) => {
             if (answers.newdir) {
                 this.destinationRoot(`${answers.namespace}.${answers.projectname}`);
             }
             this.config.set(answers);
+            this.config.set("namespaceURI", answers.namespace.split(".").join("/"));
         });
     }
 
-    writing() {
-        const sViewName = this.config.get("viewname");
-        const sViewType = this.config.get("viewtype");
-
-        this.config.set("namespaceURI", this.config.get("namespace").split(".").join("/"));
+    async writing() {
+        const oConfig = this.config.getAll();
 
         this.sourceRoot(path.join(__dirname, "templates"));
         glob.sync("**", {
@@ -101,45 +96,111 @@ module.exports = class extends Generator {
             nodir: true
         }).forEach((file) => {
             const sOrigin = this.templatePath(file);
-            const sTarget = this.destinationPath(file.replace(/^_/, "").replace(/\/_/, "/").replace(/\$ViewType/, sViewType).replace(/\$ViewEnding/, sViewType.toLowerCase()).replace(/\$ViewName/, sViewName));
+            const sTarget = this.destinationPath(file.replace(/^_/, "").replace(/\/_/, "/"));
 
-            this.fs.copyTpl(sOrigin, sTarget, this.config.getAll());
+            this.fs.copyTpl(sOrigin, sTarget, oConfig);
         });
 
-        const oSubGen = Object.assign({}, this.config.getAll());
+        const oSubGen = Object.assign({}, oConfig);
         oSubGen.isSubgeneratorCall = true;
         oSubGen.cwd = this.destinationRoot();
+        oSubGen.modulename = "uimodule";
 
-        this.composeWith(require.resolve("../newview"), oSubGen);
-        if (this.config.get("cordova")) {
+        if (oConfig.platform !== "Static webserver" && oConfig.platform !== "SAP NetWeaver") {
+            this.composeWith(require.resolve("../additionalmodules"), oSubGen);
+        }
+
+        this.composeWith(require.resolve("../newwebapp"), oSubGen);
+
+        /** msc changes start */
+        if (oConfig.cordova) {
             this.composeWith(require.resolve("../addcordova"), oSubGen);
         }
-        const selectedPlatform = this.config.get("platform");
-        if (selectedPlatform !== "Static webserver") {
-            this.composeWith(require.resolve("../approuter"), oSubGen);
-            if (selectedPlatform === "Cloud Foundry HTML5 Application Repository") {
-                this.composeWith(require.resolve("../deployer"), oSubGen);
+        /** msc changes end */
+
+    }
+
+    async addPackage() {
+        const oConfig = this.config.getAll();
+        let packge = {
+            "name": oConfig.projectname,
+            "version": "0.0.1",
+            "scripts": {
+                "start": "ui5 serve --config=uimodule/ui5.yaml  --open index.html",
+                "build:ui": "run-s ",
+                "test": "run-s lint karma",
+                "karma-ci": "karma start karma-ci.conf.js",
+                "clearCoverage": "shx rm -rf coverage",
+                "karma": "run-s clearCoverage karma-ci",
+                "lint": "eslint ."
+            },
+            "devDependencies": {
+                "shx": "^0.3.2",
+                "@ui5/cli": "^2.4.1",
+                "ui5-middleware-livereload": "^0.4.1",
+                "karma": "^5.1.1",
+                "karma-chrome-launcher": "^3.1.0",
+                "karma-coverage": "^2.0.3",
+                "karma-ui5": "^2.2.0",
+                "npm-run-all": "^4.1.5",
+                "eslint": "^7.7.0"
+            },
+            "ui5": {
+                "dependencies": [
+                    "ui5-middleware-livereload",
+                ]
             }
-            if (selectedPlatform === "Fiori Launchpad on Cloud Foundry") {
-                this.composeWith(require.resolve("../deployer"), oSubGen);
-                this.composeWith(require.resolve("../launchpad"), oSubGen);
+        };
+
+        if (oConfig.platform !== "Static webserver" && oConfig.platform !== "SAP NetWeaver") {
+            packge.devDependencies["ui5-middleware-cfdestination"] = "^0.2.2";
+            packge.devDependencies["ui5-task-zipper"] = "^0.3.1",
+                packge.devDependencies["cross-var"] = "^1.1.0";
+            packge.devDependencies["mbt"] = "^1.0.16";
+            packge.ui5.dependencies.push("ui5-middleware-cfdestination");
+            packge.ui5.dependencies.push("ui5-task-zipper");
+
+            if (oConfig.platform.includes("Cloud Foundry")) {
+                packge.scripts["build:mta"] = "mbt build";
+                packge.scripts["deploy:cf"] = `cross-var cf deploy mta_archives/${oConfig.projectname}_$npm_package_version.mtar`;
+                packge.scripts["deploy"] = "run-s build:mta deploy:cf";
+            } else if (oConfig.platform === "Application Router @ SAP HANA XS Advanced") {
+                packge.scripts["build:mta"] = "mbt build -p=xsa";
+                packge.scripts["deploy:cf"] = `cross-var xs deploy mta_archives/${oConfig.projectname}_$npm_package_version.mtar`;
+                packge.scripts["deploy"] = "run-s build:mta deploy:xs";
+            }
+
+            if (oConfig.platform === "Fiori Launchpad on Cloud Foundry") {
+                packge.scripts.start = "ui5 serve --config=uimodule/ui5.yaml  --open flpSandbox.html";
             }
         }
+
+        if (oConfig.platform === "SAP NetWeaver") {
+            packge.devDependencies["ui5-task-nwabap-deployer"] = "*";
+            packge.devDependencies["ui5-middleware-route-proxy"] = "*";
+            packge.ui5.dependencies.push("ui5-task-nwabap-deployer");
+            packge.ui5.dependencies.push("ui5-middleware-route-proxy");
+            packge.scripts["deploy"] = "run-s build:ui";
+        }
+
+        /** msc changes start */
+        if (oConfig.cordova) {
+            packge.scripts["cordova:init"] = "ui5 build --config=uimodule/ui5.yaml -a --clean-dest --dest uimodule/dist && node scripts/cordovaPrepare.js --source uimodule/dist --dest ./cordova_app/www"
+            packge.scripts["cordova:prepare-dev"] = "ui5 build dev --config=uimodule/ui5.yaml --dest uimodule/dist --include-task=createDebugFiles && node scripts/cordovaPrepare.js --source uimodule/dist --dest ./cordova_app/www"
+            packge.scripts["cordova:prepare-release"] = "ui5 build --config=uimodule/ui5.yaml --dest uimodule/dist && node scripts/cordovaPrepare.js --source uimodule/dist --dest ./cordova_app/www"
+            packge.scripts["cordova:run"] = "(cd ./cordova_app/ && cordova run --emulator && cd ..)";
+        }
+        /** msc changes end */
+
+        await fileaccess.writeJSON.call(this, "/package.json", packge);
     }
 
     install() {
+        this.config.set("setupCompleted", true);
         this.installDependencies({
             bower: false,
             npm: true
         });
-        if (process.platform !== "win32") {
-            // eslint-disable-next-line no-console
-            console.warn("Install @ui5/cli => `sudo npm install --global @ui5/cli`");
-        } else {
-            this.npmInstall(["@ui5/cli"], {
-                "global": true
-            });
-        }
     }
 
     end() {

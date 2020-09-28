@@ -1,4 +1,5 @@
-const Generator = require("yeoman-generator");
+const Generator = require("yeoman-generator"),
+  fileaccess = require("../../helpers/fileaccess");
 
 module.exports = class extends Generator {
 
@@ -6,14 +7,27 @@ module.exports = class extends Generator {
     if (this.options.isSubgeneratorCall) {
       this.destinationRoot(this.options.cwd);
       this.options.oneTimeConfig = this.config.getAll();
+      this.options.oneTimeConfig.modulename = this.options.modulename;
+      this.options.oneTimeConfig.viewname = this.options.viewname;
+
+      this.options.oneTimeConfig.appId = this.options.oneTimeConfig.namespace + "." + (this.options.modulename === "uimodule" ? this.options.oneTimeConfig.projectname : this.options.modulename);
+      this.options.oneTimeConfig.appURI = this.options.oneTimeConfig.namespaceURI + "/" + (this.options.modulename === "uimodule" ? this.options.oneTimeConfig.projectname : this.options.modulename);
       return [];
     }
+
+    const modules = this.config.get("uimodules");
     var aPrompt = [{
+      type: "list",
+      name: "modulename",
+      message: "To which module do you want to add a view?",
+      choices: modules || [],
+      when: modules && modules.length > 1
+    }, {
       type: "input",
       name: "viewname",
       message: "What is the name of the new view?",
       validate: (s) => {
-        if (/^[a-zA-Z0-9_-]*$/g.test(s)) {
+        if (/^\d*[a-zA-Z][a-zA-Z0-9]*$/g.test(s)) {
           return true;
         }
         return "Please use alpha numeric characters only for the view name.";
@@ -23,14 +37,14 @@ module.exports = class extends Generator {
       name: "createcontroller",
       message: "Would you like to create a corresponding controller as well?"
     }];
-    if (!this.config.getAll().viewtype) {
 
+    if (!this.config.getAll().viewtype) {
       aPrompt = aPrompt.concat([{
         type: "input",
         name: "projectname",
         message: "Seems like this project has not been generated with Easy-UI5. Please enter the name your project.",
         validate: (s) => {
-          if (/^[a-zA-Z0-9_-]*$/g.test(s)) {
+          if (/^\d*[a-zA-Z][a-zA-Z0-9]*$/g.test(s)) {
             return true;
           }
           return "Please use alpha numeric characters only for the project name.";
@@ -65,37 +79,47 @@ module.exports = class extends Generator {
       this.options.oneTimeConfig.viewname = answers.viewname;
       this.options.oneTimeConfig.createcontroller = answers.createcontroller;
       this.options.oneTimeConfig.addToRoute = answers.addToRoute;
+      this.options.oneTimeConfig.modulename = answers.modulename || modules[0];
 
       if (answers.projectname) {
         this.options.oneTimeConfig.projectname = answers.projectname;
         this.options.oneTimeConfig.namespace = answers.namespace;
         this.options.oneTimeConfig.viewtype = answers.viewtype;
       }
+
+
+      this.options.oneTimeConfig.appId = this.options.oneTimeConfig.namespace + "." + (answers.modulename === "uimodule" ? this.options.oneTimeConfig.projectname : answers.modulename);
+      this.options.oneTimeConfig.appURI = this.options.oneTimeConfig.namespaceURI + "/" + (answers.modulename === "uimodule" ? this.options.oneTimeConfig.projectname : answers.modulename);
     });
   }
 
   async writing() {
     const sViewFileName = "webapp/view/$ViewName.view.$ViewEnding";
     const sControllerFileName = "webapp/controller/$ViewName.controller.js";
-
+    const sTestFileName = "webapp/test/integration/pages/$ViewName.js";
     const sViewType = this.options.oneTimeConfig.viewtype;
     const sViewName = this.options.oneTimeConfig.viewname;
+    const sModuleName = this.options.oneTimeConfig.modulename;
     this.options.oneTimeConfig.isSubgeneratorCall = this.options.isSubgeneratorCall;
 
-    const bBaseControllerExists = await this.fs.exists("webapp/controller/BaseController.js");
+    const bBaseControllerExists = this.fs.exists(sModuleName + "/webapp/controller/BaseController.js");
     var sControllerToExtend = "sap/ui/core/mvc/Controller";
     if (bBaseControllerExists) {
-      sControllerToExtend = this.config.get("namespace").split(".").join("/") + "/" + this.options.oneTimeConfig.projectname + "/controller/BaseController";
+      sControllerToExtend = this.options.oneTimeConfig.appURI + "/controller/BaseController";
     }
     this.options.oneTimeConfig.controllerToExtend = sControllerToExtend;
 
     var sOrigin = this.templatePath(sViewFileName);
-    var sTarget = this.destinationPath(sViewFileName.replace(/\$ViewEnding/, sViewType.toLowerCase()).replace(/\$ViewName/, sViewName));
+    var sTarget = this.destinationPath(sModuleName + "/" + sViewFileName.replace(/\$ViewEnding/, sViewType.toLowerCase()).replace(/\$ViewName/, sViewName));
+    this.fs.copyTpl(sOrigin, sTarget, this.options.oneTimeConfig);
+
+    var sOrigin = this.templatePath(sTestFileName);
+    var sTarget = this.destinationPath(sModuleName + "/" + sTestFileName.replace(/\$ViewName/, sViewName));
     this.fs.copyTpl(sOrigin, sTarget, this.options.oneTimeConfig);
 
     if (this.options.oneTimeConfig.createcontroller || this.options.isSubgeneratorCall) {
       sOrigin = this.templatePath(sControllerFileName);
-      sTarget = this.destinationPath(sControllerFileName.replace(/\$ViewEnding/, sViewType.toLowerCase()).replace(/\$ViewName/, sViewName));
+      sTarget = this.destinationPath(sModuleName + "/" + sControllerFileName.replace(/\$ViewEnding/, sViewType.toLowerCase()).replace(/\$ViewName/, sViewName));
       this.fs.copyTpl(sOrigin, sTarget, this.options.oneTimeConfig);
     }
 
@@ -104,9 +128,7 @@ module.exports = class extends Generator {
     }
 
     if (this.options.oneTimeConfig.addToRoute) {
-      try {
-        const filePath = process.cwd() + "/webapp/manifest.json";
-        const json = await this.fs.readJSON(filePath);
+      await fileaccess.manipulateJSON.call(this, "/" + sModuleName + "/webapp/manifest.json", function (json) {
         const ui5Config = json["sap.ui5"];
         const targetName = "Target" + sViewName;
 
@@ -120,13 +142,10 @@ module.exports = class extends Generator {
           viewId: sViewName,
           viewName: sViewName
         };
-
-        this.fs.writeJSON(filePath, json);
-      } catch (e) {
-        this.log("Error during the manipulation of the manifest: " + e);
-        throw e;
-      }
+        return json;
+      });
     }
+
     this.log("Created a new view.");
   }
 };

@@ -3,8 +3,8 @@ version: 2
 defaults: &defaults
   working_directory: ~/repo
   docker:
-    - image: circleci/node:10.6.0-browsers
-  # parallelism: 4 -- Disabled since we use the free version
+    - image: circleci/node:12.18.0-browsers
+  parallelism: 4
 
 jobs:
   build:
