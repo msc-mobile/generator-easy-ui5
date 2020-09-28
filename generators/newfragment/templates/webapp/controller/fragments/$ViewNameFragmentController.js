@@ -6,35 +6,27 @@ sap.ui.define([
         "use strict";
 
         return BaseFragmentController.extend(
-            "<%= namespace%>.<%=projectname%>.fragments.<%=viewname%>FragmentController", {
+            "<%=namespace%>.<%=projectname%>.view.<%=viewname%>FragmentController", {
 
                 constructor: function(oCallingController) {
-                    BaseFragmentController.apply(this, ["<%=viewname%>", oCallingController]);
-                },
-
-                getFragment: function() {
-                    if (!this._oFragment) {
-                        this._oFragment = sap.ui.xmlfragment("MessagePopover", "<%= namespace%>.<%=projectname%>.view.fragments.<%=viewname%>",
-                            this);
-                        this.getView().addDependent(this._oFragment);
-                    }
-
-                    return this._oFragment;
+                    BaseFragmentController.call(this, oCallingController, "<%=viewname%>");
                 },
 
                 /**
                  * Opens the dialog.
-                 * @param {any} oEvent Event from the view
                  */
-                open: function(oEvent) {
-                    this.getFragment().openBy(oEvent.getSource());
+                open: function() {
+                    // this.loadFragment("<%= namespace%>.<%=projectname%>.view.<%=viewname%>").then(oDialog => {
+                    //     this._oDialog = oDialog;
+                    //     oDialog.open();
+                    // });
                 },
 
                 /**
                  * Closes the dialog.
                  */
                 onClose: function() {
-                    this.getFragment().close();
+                    // this._oDialog.close();
                 }
             }
         );

@@ -9,10 +9,27 @@ sap.ui.define([
 
         _oCallingController: null,
 
-        constructor: function(sFragmentId, oCallingController) {
-            this._sFragmentId = sFragmentId;
+        constructor: function(oCallingController, sFragmentId) {
             this._oCallingController = oCallingController;
+            this._sFragmentId = sFragmentId;
         },
+
+
+        /**
+         * Loads a fragment.  Fragments are loaded only once.
+         * @param {string} sName name of the XML Fragment (i.e. fully qualified name of fragment)
+         * @param {object} oController controller for this fragment.  Can be null (if null this controller is used)
+         * @param {string} [sFragmentId] id of the fragment
+         * @returns {Promise} a Promise resolved with the contents of the fragment
+         */
+        loadFragment: function(sId, oController, sFragmentId) {
+
+            if (sFragmentId) {
+                this._sFragmentId = sFragmentId;
+            }
+            return this._oCallingController.loadFragment(sId, oController || this, this._sFragmentId);
+        },
+
 
         /**
          * Getter for the calling controller (the controller which instantiated this fragment)
