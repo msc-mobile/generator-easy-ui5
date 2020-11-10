@@ -1,7 +1,7 @@
 sap.ui.define([
-  "<%= controllerToExtend%>"
+    "<%= controllerToExtend%>"
 ], function(Controller) {
-  "use strict";
+    "use strict";
 
-  return Controller.extend("<%=appId%>.controller.<%=viewname%>", {});
+    return Controller.extend("<%=namespace%>.<%=projectname%>.controller.<%=viewname%>", {});
 });
