@@ -1,4 +1,4 @@
-<% if (viewtype === 'XML') { %> <mvc:View controllerName="<%=namespace%>.<%=projectname%>.controller.<%=viewname%>"
+<% if (viewtype === 'XML') { %> <mvc:View controllerName="<%=appId%>.controller.<%=viewname%>"
   displayBlock="true"
   xmlns="sap.m"
   xmlns:mvc="sap.ui.core.mvc">
